@@ -43,13 +43,21 @@ extern YYSTYPE cool_yylval;
  *  Add Your own definitions here
  */
 
+int multi_comment_count = 0;
+char ret_str[1024];
+char *ret_p = ret_str;
+bool error_string = false;
+
 %}
 
 /*
  * Define names for regular expressions here.
  */
 
-DARROW          =>
+%Start L_COMMENT
+%Start M_COMMENT
+%Start COMMENT
+%Start Quote
 
 %%
 
@@ -61,12 +69,131 @@ DARROW          =>
  /*
   *  The multiple-character operators.
   */
-{DARROW}		{ return (DARROW); }
+<L_COMMENT>\n	{ curr_lineno += 1; BEGIN 0;}
+<M_COMMENT>\n 	{ curr_lineno += 1;}
+<L_COMMENT>[^\n]*	{}
+<M_COMMENT>[^\n"*)""(*"]*	{}
+<M_COMMENT>["*""("")"]		{}
+"(*"		{ BEGIN M_COMMENT; multi_comment_count += 1;}
+<M_COMMENT>"*)"	{ multi_comment_count -= 1; if(multi_comment_count == 0) BEGIN 0;}
+<M_COMMENT><<EOF>> {yylval.error_msg = "EOF In Comment";BEGIN 0;return ERROR;}
+"*)"  		{yylval.error_msg = "Unmatched *)";return ERROR;}
+"--"		{BEGIN L_COMMENT;}
 
  /*
   * Keywords are case-insensitive except for the values true and false,
   * which must begin with a lower-case letter.
   */
+
+[cC][lL][aA][sS][sS]		{return (CLASS);}
+[eE][lL][sS][eE]		{return (ELSE);}
+[fF][iI]		{return (FI);}
+[iI][fF]		{return (IF);}
+[iI][nN]		{return (IN);}
+[iI][nN][hH][eE][rR][iI][tT][sS]		{return (INHERITS);}
+[lL][eE][tT]		{return (LET);}
+[lL][oO][oO][pP]		{return (LOOP);}
+[pP][oO][oO][lL]		{return (POOL);}
+[tT][hH][eE][nN]		{return (THEN);}
+[wW][hH][iI][lL][eE]		{return (WHILE);}
+[cC][aA][sS][eE]		{return (CASE);}
+[eE][sS][aA][cC]		{return (ESAC);}
+[oO][fF]		{return (OF);}
+[nN][eE][wW]		{return (NEW);}
+[nN][oO][tT]		{return (NOT);}
+[iI][sS][vV][oO][iI][dD]		{return (ISVOID);}
+t[rR][uU][eE]		{yylval.boolean = true;return BOOL_CONST;}
+f[aA][lL][sS][eE]	{yylval.boolean = false;return BOOL_CONST;}
+
+ /*
+  * White spaces
+  * 
+  */
+[ \f\v\r\t]+		{}
+
+<Quote><<EOF>> 		{yylval.error_msg = "EOF In String";ret_p = ret_str; *ret_p = '\0';BEGIN 0;return ERROR;}
+<Quote>\n	       {BEGIN 0;ret_p = ret_str; *ret_p = '\0';
+		       if(!error_string) {
+		       yylval.error_msg = "Unterminated string constant";return ERROR;}
+		       }
+
+<Quote>\\(.|\n)		{
+			  
+			  if(!error_string) {
+			  if(yytext[1] == '\0') {
+			     yylval.error_msg = "Null In String";ret_p = ret_str; *ret_p = '\0';error_string = true;BEGIN 0;return ERROR;
+                          }
+			  if(yytext[1] != 'n' && yytext[1] != 't' && yytext[1] != 'b' && yytext[1] != 'f') {
+			    *ret_p = yytext[1];
+			  }
+ 			  else {
+			    switch(yytext[1]) {
+			      case 'n' :*ret_p = '\n';break;
+			      case 't' :*ret_p = '\t';break;
+			      case 'b' :*ret_p = '\b';break;
+			      case 'f' :*ret_p = '\f';break;
+			      }
+			  }
+			  ret_p += 1;
+			  }
+		       }
+
+
+<Quote>[^"\\\n]*	{
+			//cout << "Entered \n"; cout << yytext ;
+			if(!error_string) {
+			for(int i = 0; i < yyleng;i++) {
+			  if(yytext[i] == '\0') {
+			     yylval.error_msg = "Null In String";error_string = true;return ERROR;
+                          }
+			  *ret_p = yytext[i];
+			  ret_p += 1;
+			  }
+			 }
+		      }    
+
+<Quote>\"	      {
+		        *ret_p = '\0';
+			BEGIN 0;
+			if(!error_string)
+				{yylval.symbol = idtable.add_string(ret_str); ret_p = ret_str;return STR_CONST;}
+			else {
+			     error_string = false;
+			     ret_p = ret_str;    
+			}
+			
+		      }
+\"		      { BEGIN Quote;}
+
+
+"=>"		      {return DARROW;}
+"<-"		      {return ASSIGN;}
+"<="		      {return LE;}
+[a-z][a-zA-Z0-9_]*	{ yylval.symbol = idtable.add_string(yytext); return OBJECTID; }		
+[A-Z][a-zA-Z0-9_]*    { yylval.symbol = idtable.add_string(yytext); return TYPEID; }
+[0-9]+		      { yylval.symbol = idtable.add_string(yytext); return INT_CONST;}
+
+
+"+"		{return ('+');}
+"/"		{return ('/');}
+"-"		{return ('-');}
+"*"		{return ('*');}
+"="		{return ('=');}
+"<"		{return ('<');}
+"."		{return ('.');}
+"~"		{return ('~');}
+","		{return (',');}
+";"		{return (';');}
+":"		{return (':');}
+"("		{return ('(');}
+")"		{return (')');}
+"@"		{return ('@');}
+"{"		{return ('{');}
+"}"		{return ('}');}
+\n		      {curr_lineno += 1;}
+.		      { yylval.error_msg = yytext; return ERROR; }
+
+
 
 
  /*
