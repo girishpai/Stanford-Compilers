@@ -44,10 +44,10 @@ extern YYSTYPE cool_yylval;
  */
 
 int multi_comment_count = 0;
-char ret_str[1024];
+char ret_str[MAX_STR_CONST];
 char *ret_p = ret_str;
 bool error_string = false;
-
+int num_chars = 0;
 %}
 
 /*
@@ -74,11 +74,10 @@ bool error_string = false;
 <L_COMMENT>[^\n]*	{}
 <M_COMMENT>[^\n"*)""(*"]*	{}
 <M_COMMENT>["*""("")"]		{}
-"(*"		{ BEGIN M_COMMENT; multi_comment_count += 1;}
 <M_COMMENT>"*)"	{ multi_comment_count -= 1; if(multi_comment_count == 0) BEGIN 0;}
 <M_COMMENT><<EOF>> {yylval.error_msg = "EOF In Comment";BEGIN 0;return ERROR;}
 "*)"  		{yylval.error_msg = "Unmatched *)";return ERROR;}
-"--"		{BEGIN L_COMMENT;}
+
 
  /*
   * Keywords are case-insensitive except for the values true and false,
@@ -113,13 +112,19 @@ f[aA][lL][sS][eE]	{yylval.boolean = false;return BOOL_CONST;}
 
 <Quote><<EOF>> 		{yylval.error_msg = "EOF In String";ret_p = ret_str; *ret_p = '\0';BEGIN 0;return ERROR;}
 <Quote>\n	       {BEGIN 0;ret_p = ret_str; *ret_p = '\0';
-		       if(!error_string) {
+		       if(error_string == false) {
 		       yylval.error_msg = "Unterminated string constant";return ERROR;}
 		       }
 
 <Quote>\\(.|\n)		{
 			  
-			  if(!error_string) {
+			  if(error_string == false) {
+			  num_chars += 1;
+			  if(num_chars >= MAX_STR_CONST) {
+			    yylval.error_msg = "String too long2";error_string = true;
+			   
+			    return ERROR;
+			  }	       
 			  if(yytext[1] == '\0') {
 			     yylval.error_msg = "Null In String";ret_p = ret_str; *ret_p = '\0';error_string = true;BEGIN 0;return ERROR;
                           }
@@ -141,7 +146,12 @@ f[aA][lL][sS][eE]	{yylval.boolean = false;return BOOL_CONST;}
 
 <Quote>[^"\\\n]*	{
 			//cout << "Entered \n"; cout << yytext ;
-			if(!error_string) {
+			if(error_string == false) {
+			num_chars += yyleng;
+			  if(num_chars >= MAX_STR_CONST) {
+			    yylval.error_msg = "String too long";error_string = true;return ERROR;
+			   
+			  }
 			for(int i = 0; i < yyleng;i++) {
 			  if(yytext[i] == '\0') {
 			     yylval.error_msg = "Null In String";error_string = true;return ERROR;
@@ -155,7 +165,8 @@ f[aA][lL][sS][eE]	{yylval.boolean = false;return BOOL_CONST;}
 <Quote>\"	      {
 		        *ret_p = '\0';
 			BEGIN 0;
-			if(!error_string)
+			num_chars = 0;
+			if(error_string == false)
 				{yylval.symbol = idtable.add_string(ret_str); ret_p = ret_str;return STR_CONST;}
 			else {
 			     error_string = false;
@@ -164,8 +175,8 @@ f[aA][lL][sS][eE]	{yylval.boolean = false;return BOOL_CONST;}
 			
 		      }
 \"		      { BEGIN Quote;}
-
-
+"--"		{BEGIN L_COMMENT;}
+"(*"		{ BEGIN M_COMMENT; multi_comment_count += 1;}
 "=>"		      {return DARROW;}
 "<-"		      {return ASSIGN;}
 "<="		      {return LE;}
